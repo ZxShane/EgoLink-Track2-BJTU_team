@@ -1,0 +1,147 @@
+% Required preamble:
+% \usepackage{tikz}
+% \usetikzlibrary{arrows.meta,positioning,fit,calc,backgrounds}
+
+\begin{figure*}[t]
+\centering
+\resizebox{0.98\textwidth}{!}{%
+\begin{tikzpicture}[
+    font=\sffamily,
+    >=Latex,
+    node distance=7mm and 10mm,
+    stage/.style={
+        draw,
+        rounded corners=2pt,
+        line width=0.55pt,
+        align=center,
+        minimum width=28mm,
+        minimum height=9mm,
+        inner xsep=5pt,
+        inner ysep=4pt,
+        fill=white
+    },
+    module/.style={
+        stage,
+        minimum width=34mm,
+        minimum height=11mm,
+        fill=blue!4,
+        draw=blue!45!black
+    },
+    evidence/.style={
+        stage,
+        minimum width=31mm,
+        fill=teal!5,
+        draw=teal!45!black
+    },
+    tool/.style={
+        stage,
+        minimum width=34mm,
+        fill=orange!7,
+        draw=orange!55!black
+    },
+    validator/.style={
+        stage,
+        minimum width=35mm,
+        fill=purple!6,
+        draw=purple!50!black
+    },
+    output/.style={
+        stage,
+        minimum width=31mm,
+        fill=gray!8,
+        draw=gray!55!black
+    },
+    notebook/.style={
+        stage,
+        minimum width=33mm,
+        fill=red!5,
+        draw=red!45!black
+    },
+    decision/.style={
+        draw,
+        diamond,
+        aspect=1.7,
+        line width=0.55pt,
+        align=center,
+        inner xsep=2pt,
+        inner ysep=1pt,
+        fill=white
+    },
+    flow/.style={->, line width=0.6pt, draw=black!75},
+    weakflow/.style={->, line width=0.5pt, draw=black!45},
+    rejectflow/.style={->, line width=0.6pt, draw=red!65!black},
+    group/.style={
+        draw=black!18,
+        rounded corners=3pt,
+        fill=black!2,
+        inner sep=5pt
+    },
+    label/.style={font=\scriptsize\sffamily, align=center, text=black!70}
+]
+
+% Main pipeline.
+\node[module] (input) {User Instruction\\+ Scenario Video};
+\node[module, right=of input] (grounding) {Task-Level\\Visual Grounding};
+\node[evidence, right=of grounding] (ocr) {OCR and Visual\\Evidence};
+\node[module, right=of ocr] (reason) {Service-Agent\\Reasoning};
+\node[decision, right=9mm of reason] (decide) {Next\\action?};
+
+\node[tool, above right=5mm and 9mm of decide] (toolcall) {Clean JSON\\Tool Call};
+\node[tool, right=of toolcall] (tools) {Official Tool\\Environment};
+\node[evidence, below=7mm of tools] (toolres) {Tool Results};
+
+\node[output, below right=5mm and 9mm of decide] (answer) {Natural-Language\\Final Answer};
+
+\node[validator, right=16mm of decide] (valid) {Scenario-Aware\\Validator};
+\node[notebook, above=7mm of valid] (notebook) {Error Notebook\\{\scriptsize retail / kitchen / restaurant / order}};
+\node[decision, right=10mm of valid] (accept) {Valid?};
+\node[output, right=10mm of accept] (save) {Saved Trajectory\\{\scriptsize JSON calls or final text only}};
+
+% Internal details.
+\node[evidence, below=7mm of grounding] (keyframe) {Keyframe /\\Temporal Segment};
+\node[evidence, below=7mm of ocr] (bbox) {Target BBox\\and Object Region};
+\node[stage, below=7mm of reason, fill=blue!2, draw=blue!25!black] (plan) {Internal Plan\\Candidate Matching\\Tool Selection};
+
+% Group boxes.
+\begin{scope}[on background layer]
+    \node[group, fit=(grounding)(keyframe)(bbox), label={[label]below:Perception-side localization}] (g1) {};
+    \node[group, fit=(reason)(plan), label={[label]below:Tool-grounded policy}] (g2) {};
+    \node[group, fit=(valid)(notebook)(accept), label={[label]below:Experience-guided validation}] (g3) {};
+\end{scope}
+
+% Forward flow.
+\draw[flow] (input) -- (grounding);
+\draw[flow] (grounding) -- (ocr);
+\draw[flow] (ocr) -- (reason);
+\draw[flow] (reason) -- (decide);
+\draw[flow] (decide) -- node[label, above left=-1pt] {tool needed} (toolcall);
+\draw[flow] (toolcall) -- (tools);
+\draw[flow] (tools) -- (toolres);
+\draw[flow] (toolres.west) to[out=180,in=90] (reason.north);
+\draw[flow] (decide) -- node[label, below left=-1pt] {task complete} (answer);
+
+% Evidence links.
+\draw[weakflow] (grounding) -- (keyframe);
+\draw[weakflow] (grounding) |- (bbox);
+\draw[weakflow] (keyframe) -| (ocr);
+\draw[weakflow] (bbox) -- (ocr);
+\draw[weakflow] (reason) -- (plan);
+
+% Validation flow.
+\draw[flow] (toolcall.east) to[out=0,in=145] (valid.north west);
+\draw[flow] (answer.east) to[out=0,in=215] (valid.south west);
+\draw[weakflow] (notebook) -- (valid);
+\draw[flow] (valid) -- (accept);
+\draw[flow] (accept) -- node[label, above] {yes} (save);
+\draw[rejectflow] (accept.south) to[out=-90,in=-35] node[label, below] {high-level correction} (reason.south east);
+
+% Small annotations.
+\node[label, above=1.5mm of ocr] (ocrnote) {Noisy evidence, not final catalog facts};
+\node[label, below=1.5mm of toolres] (toolnote) {Authoritative task facts};
+\node[label, above=1.5mm of notebook] (nbnote) {Recurring failure patterns};
+
+\end{tikzpicture}%
+}
+\caption{Overview of the proposed service-agent pipeline. The system first performs task-level visual grounding to identify the relevant temporal segment and target bounding box. OCR and visual cues are treated as noisy candidate evidence. The service agent then reasons under a strict tool-grounded policy and produces either a JSON tool call or a final natural-language response. A scenario-aware validator checks each draft using an error notebook of recurring failure patterns before the response is accepted and saved.}
+\label{fig:method-pipeline}
+\end{figure*}
