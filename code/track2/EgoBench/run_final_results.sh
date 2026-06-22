@@ -91,8 +91,8 @@ export SERVICE_MODEL_NAME="${SERVICE_MODEL_NAME:-qwen3.7-plus}"
 export VALIDATOR_MODEL_NAME="${VALIDATOR_MODEL_NAME:-glm-5.2}"
 export USER_API_BASE_URL="${USER_API_BASE_URL:-https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1}"
 export SERVICE_API_BASE_URL="${SERVICE_API_BASE_URL:-https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1}"
-export API_KEY="${API_KEY:-sk-sp-D.LMMEH.NjUk.MEUCIEZlCBbSEo1idEYnRmrpnvMrv12oIT3yC+GZRnQfWN7QAiEArCrS5mBR+tIq/gH66eCqb6sRzFPGM1xZANafBMhNuHk=}"
-export SERVICE_API_KEY="${SERVICE_API_KEY:-sk-sp-D.LLMYY.KG8i.MEUCIE7FOyau8yZZIELUfNozptOg6kKvVVnt2Yyxjbl6+2nfAiEAyhN8pD1MEIK5cS3wqoSIrRuZNtnltvZzXjom9ChvOts=}"
+export API_KEY="${API_KEY:}"
+export SERVICE_API_KEY="${SERVICE_API_KEY:}"
 export VIDEO_MODE="${VIDEO_MODE:-url}"
 
 if [ -x "$SCRIPT_DIR/.venv/bin/python" ]; then
