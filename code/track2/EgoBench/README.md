@@ -482,7 +482,7 @@ ls videos/
 
 If using URL mode, verify your `VIDEO_URL_MAPPING` is correct:
 ```bash
-export VIDEO_URL_MAPPING='{"retail1.mp4": "https://your-url.com/retail1.mp4"}'
+export VIDEO_URL_MAPPING='{"retail1.mp4": "https://example.com/retail1.mp4"}'
 ```
 
 ## Update on Kitchen Scenario Ground Truth Fixes
