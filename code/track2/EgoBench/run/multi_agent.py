@@ -1331,22 +1331,6 @@ def _load_grounding_skill(skill_name):
         return ""
 
 
-def _load_video_task_grounding_skill():
-    skill_paths = [
-        os.path.join(project_root, "skills", "video-task-grounding", "SKILL.md"),
-        os.path.abspath(os.path.join(project_root, "..", "..", "..", "skills", "video-task-grounding", "SKILL.md")),
-        os.path.expanduser("~/.codex/skills/video-task-grounding/SKILL.md"),
-    ]
-    for skill_path in skill_paths:
-        try:
-            with open(skill_path, "r", encoding="utf-8") as f:
-                return f.read().strip()
-        except OSError:
-            continue
-    print(f"[Runtime Grounding] Failed to load video-task-grounding skill from: {skill_paths}")
-    return ""
-
-
 def _resolve_local_video_path(media_path):
     if not media_path:
         return None
@@ -1855,127 +1839,6 @@ def _manual_grounding_for_task(scenario, scenario_number, task_id):
     return _load_manual_grounding_index().get((scenario, int(scenario_number), int(task_id)))
 
 
-def _runtime_grounding_system_prompt():
-    grounding_skill = _load_video_task_grounding_skill()
-    return (
-        "You are a runtime video task grounding module for EgoBench service-agent tasks. "
-        "Use only task-visible inputs: instruction/user message, image_description, video_path/video, and visible video content. "
-        "Do not use hidden answers, ground truth, catalog/database facts, or world knowledge for task facts. "
-        "Separate event grounding from OCR grounding: identify the referred event/object first, then choose the clearest nearby frame for OCR. "
-        "Return strict JSON only; no markdown, no natural language outside JSON.\n\n"
-        "Video task grounding skill requirements:\n"
-        f"{grounding_skill}"
-    )
-
-
-def _runtime_grounding_user_prompt(task, user_reply, media_path, scenario, scenario_number, task_id):
-    visible_task = {
-        "scenario": scenario,
-        "scenario_number": scenario_number,
-        "task_id": task_id,
-        "instruction": task.get("Instruction") or task.get("instruction") or user_reply,
-        "image_description": task.get("image_description") or task.get("Image_description") or task.get("image") or "",
-        "video_path": task.get("video") or task.get("video_path") or task.get("image_path") or media_path,
-        "latest_user_message": user_reply,
-    }
-    return (
-        "Generate task-relevant video grounding for the service agent.\n\n"
-        f"Task-visible fields:\n{json.dumps(visible_task, ensure_ascii=False, indent=2)}\n\n"
-        "Return ONLY one JSON object shaped like the local grounding JSONL records:\n"
-        "{\n"
-        '  "scenario": "retail|kitchen|restaurant|order",\n'
-        '  "scenario_number": 1,\n'
-        '  "task_id": 1,\n'
-        '  "video_path": "original visible video filename or URL",\n'
-        '  "instruction": "visible instruction/user request",\n'
-        '  "image_description": "visible image/video description if any",\n'
-        '  "annotation": {\n'
-        '    "annotation_version": "runtime-gpt5.5-video-task-grounding-1.0",\n'
-        '    "annotator": "gpt5.5-video-task-grounding",\n'
-        '    "used_hidden_fields": false,\n'
-        '    "annotation_source_fields": ["Instruction", "image_description", "video"],\n'
-        '    "reference_text": "short visible referent summary",\n'
-        '    "relevance_summary": "why the selected frames/regions matter for the user request",\n'
-        '    "frames": [\n'
-        "      {\n"
-        '        "frame_id": "short stable id",\n'
-        '        "timestamp_sec": 0.0,\n'
-        '        "time_range": "0.0-0.5s",\n'
-        '        "reason": "event/OCR grounding reason, including occlusion notes if any",\n'
-        '        "targets": [\n'
-        "          {\n"
-        '            "name": "visible target name or concise description",\n'
-        '            "type": "product|dish|ingredient|menu|object|unknown",\n'
-        '            "target_bbox": {"x1": 0.0, "y1": 0.0, "x2": 1.0, "y2": 1.0},\n'
-        '            "label_bbox": {"x1": 0.0, "y1": 0.0, "x2": 1.0, "y2": 1.0},\n'
-        '            "price_tag_bbox": null,\n'
-        '            "ocr_content": ["exact visible OCR fragments only"],\n'
-        '            "visual_attributes": ["position/color/shape/pointing-order evidence"],\n'
-        '            "confidence": "low|medium|high"\n'
-        "          }\n"
-        "        ]\n"
-        "      }\n"
-        "    ],\n"
-        '    "global_ocr_content": [],\n'
-        '    "uncertainty": "remaining visual uncertainty; say if OCR is partial/occluded",\n'
-        '    "needs_human_review": false\n'
-        "  }\n"
-        "}\n\n"
-        "Rules:\n"
-        "- Normalized bbox values must be in [0, 1], or null if not visible.\n"
-        "- OCR must be conservative and exact; do not invent catalog names or prices.\n"
-        "- Do not include local frame paths or hidden/evaluation fields.\n"
-        "- If the video cannot be inspected, still return the schema with low confidence and explain uncertainty."
-    )
-
-
-def _generate_runtime_grounding_record(task, user_reply, media_path, args, scenario, scenario_number, task_id):
-    if not media_path or args.service_model_name == "manual":
-        return None, 0, 0
-
-    messages = [
-        {"role": "system", "content": _runtime_grounding_system_prompt()},
-        {
-            "role": "user",
-            "content": [
-                {"type": "video_url", "video_url": {"url": media_path}},
-                {
-                    "type": "text",
-                    "text": _runtime_grounding_user_prompt(
-                        task,
-                        user_reply,
-                        media_path,
-                        scenario,
-                        scenario_number,
-                        task_id,
-                    ),
-                },
-            ],
-        },
-    ]
-    reply, input_tok, output_tok = call_grounding_model(messages)
-    record = _extract_json_object(reply)
-    if not record:
-        print(f"[Runtime Grounding] Failed to parse grounding JSON: {reply[:500]}")
-        return None, input_tok, output_tok
-
-    record.setdefault("scenario", scenario)
-    record.setdefault("scenario_number", scenario_number)
-    record.setdefault("task_id", task_id)
-    record.setdefault("video_path", task.get("video") or task.get("video_path") or task.get("image_path") or media_path)
-    record.setdefault("instruction", task.get("Instruction") or task.get("instruction") or user_reply)
-    record.setdefault("image_description", task.get("image_description") or "")
-    annotation = record.setdefault("annotation", {})
-    annotation.setdefault("annotation_version", "runtime-gpt5.5-video-task-grounding-1.0")
-    annotation.setdefault("annotator", "gpt5.5-video-task-grounding")
-    annotation.setdefault("used_hidden_fields", False)
-    annotation.setdefault("annotation_source_fields", ["Instruction", "image_description", "video"])
-    annotation.setdefault("frames", [])
-    annotation.setdefault("needs_human_review", True)
-    print(f"[Runtime Grounding] {json.dumps(record, ensure_ascii=False)}")
-    return record, input_tok, output_tok
-
-
 def _abs_project_path(path):
     if not path:
         return None
@@ -2305,25 +2168,6 @@ def _prepare_manual_grounding_evidence(record, user_reply, media_path, args):
     return context, input_tok, output_tok
 
 
-def _prepare_runtime_grounding_context(record, user_reply):
-    """Turn GPT-generated grounding JSON into text-only evidence for service-agent use."""
-    if not record:
-        return ""
-
-    evidence = _sanitize_prepared_grounding_evidence(_fallback_manual_text_evidence(record, user_reply))
-    generated_grounding = _strip_media_and_bbox_fields(record.get("annotation", {}))
-    context = (
-        "Prepared text-only visual evidence from runtime GPT-5.5 video grounding:\n"
-        + json.dumps(evidence, ensure_ascii=False, indent=2)
-        + "\nRuntime GPT-5.5 grounding summary JSON with media paths and raw bbox coordinates removed:\n"
-        + json.dumps(generated_grounding, ensure_ascii=False, indent=2)
-        + "\nUse only this text evidence, conversation history, and tool results for later steps. "
-        + "Do not request or rely on image/video URLs in subsequent service-agent calls."
-        + _manual_grounding_action_instruction()
-    )
-    return context
-
-
 def _build_service_user_content(text, media_path, extra_image_paths, args):
     """Attach media only when the current service step is allowed to see it."""
     content = build_message_with_image(
@@ -2626,33 +2470,24 @@ def run_simulation(input_path, tool_info_path, output_path, args=None, service_m
                 service_media_path = image_path
                 service_extra_image_paths = []
 
-                runtime_grounding = None
-                if image_path:
-                    runtime_grounding, prep_input_tok, prep_output_tok = _generate_runtime_grounding_record(
-                        sc,
+                manual_grounding = _manual_grounding_for_task(args.scenario, args.scenario_number, task_id)
+                if manual_grounding:
+                    grounding_context, prep_input_tok, prep_output_tok = _prepare_manual_grounding_evidence(
+                        manual_grounding,
                         current_user_reply_for_task,
                         image_path,
-                        args,
-                        args.scenario,
-                        args.scenario_number,
-                        task_id,
+                        args
                     )
                     inner_input_tokens += prep_input_tok
                     inner_output_tokens += prep_output_tok
-                if runtime_grounding:
-                    grounding_context = _prepare_runtime_grounding_context(
-                        runtime_grounding,
-                        current_user_reply_for_task,
-                    )
-                    history_log.setdefault("runtime_grounding", {})[str(task_id)] = runtime_grounding
                     service_media_path = None
                     service_extra_image_paths = []
                     print(
-                        "[Runtime Grounding] "
-                        f"Using prepared text-only evidence for {args.scenario}{args.scenario_number} task {task_id}"
+                        "[Manual Grounding] "
+                        f"Using current-turn text-only evidence for {args.scenario}{args.scenario_number} task {task_id}"
                     )
 
-                if image_path and args.service_model_name != "manual" and not runtime_grounding:
+                if image_path and args.service_model_name != "manual" and not manual_grounding:
                     timeline_decision, timeline_input_tok, timeline_output_tok = _select_timeline_with_model(
                         image_path,
                         current_user_reply_for_task,
@@ -2740,7 +2575,7 @@ def run_simulation(input_path, tool_info_path, output_path, args=None, service_m
                 service_model_calls_this_turn = 0
                 validation_retries_this_turn = 0
                 validator_feedback_history = []
-                force_first_tool_call = bool(runtime_grounding)
+                force_first_tool_call = bool(manual_grounding)
                 while True:
                     current_service_msgs = [{"role": "system", "content": service_agent_sys_prompt}]
                     if grounding_context:
